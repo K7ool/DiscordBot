@@ -64,6 +64,10 @@ const db = admin.firestore();
 const token = process.env.DISCORD_TOKEN;
 const adminRoleId = process.env.DISCORD_ADMIN_ROLE_ID;
 
+console.log(`[DEBUG] DISCORD_TOKEN length: ${token ? token.length : 'undefined'}`);
+console.log(`[DEBUG] DISCORD_TOKEN first 10 chars: ${token ? token.substring(0, 10) : 'undefined'}`);
+console.log(`[DEBUG] DISCORD_TOKEN type: ${typeof token}`);
+
 if (!token) {
   console.error("Missing DISCORD_TOKEN in .env");
   process.exit(1);
@@ -356,5 +360,10 @@ client.on("interactionCreate", async (interaction) => {
   }
 });
 
-client.login(token);
+try {
+  client.login(token);
+} catch (err) {
+  console.error("Failed to login to Discord:", err);
+  process.exit(1);
+}
 
