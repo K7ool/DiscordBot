@@ -589,6 +589,8 @@ const handlers = {
 
     await safeDefer(interaction);
 
+    const targetGameId = interaction.options.getInteger("game_id");
+
     const snap = await db.collection("licenses")
       .where("status", "==", "active")
       .get();
@@ -603,6 +605,20 @@ const handlers = {
       }
       universeMap.get(uid).licenses.push(lic.key);
     });
+
+    // Filter by specific game ID if provided
+    if (targetGameId) {
+      if (!universeMap.has(targetGameId)) {
+        return interaction.editReply({ embeds: [
+          new EmbedBuilder().setColor(0xff4444).setTitle("Game Not Found")
+            .setDescription(`No active licenses are bound to game ID \`${targetGameId}\`.`)
+        ] });
+      }
+      // Keep only the target game
+      const targetEntry = universeMap.get(targetGameId);
+      universeMap.clear();
+      universeMap.set(targetGameId, targetEntry);
+    }
 
     if (universeMap.size === 0) {
       return interaction.editReply({ embeds: [
@@ -629,7 +645,6 @@ const handlers = {
     const fields = [];
     for (const [uid, entry] of universeMap) {
       if (fields.length >= 25) {
-        // embedded field limit page 2 would need pagination
         break;
       }
 
@@ -661,10 +676,14 @@ const handlers = {
     const remaining = universeMap.size - fields.length;
     const footer = remaining > 0 ? `\n… and ${remaining} more game${remaining === 1 ? "" : "s"}` : "";
 
+    const title = targetGameId
+      ? `Game Details — ${universeMap.get(targetGameId)?.universeId || targetGameId}`
+      : `Games on License System (${universeMap.size})`;
+
     return interaction.editReply({ embeds: [
       new EmbedBuilder()
         .setColor(0x44aaff)
-        .setTitle(`Games on License System (${universeMap.size})`)
+        .setTitle(title)
         .setDescription(`Universe${universeMap.size === 1 ? "" : "s"} bound to active licenses${footer}`)
         .addFields(fields)
         .setTimestamp()
@@ -693,7 +712,7 @@ const handlers = {
           "`/delete id:` — Permanently remove",
           "`/setuser id: user_id:` — Reassign user",
           "`/export` — Dump all licenses as JSON",
-          "`/gameson` — Show games bound to active licenses with player counts",
+          "`/gameson [game_id]` — Show games bound to active licenses (optionally filter by game ID)",
         ].join("\n") },
       )
       .setFooter({ text: "Flipp Studios License Manager" })
@@ -731,3 +750,4 @@ client.on("interactionCreate", async (interaction) => {
 });
 
 client.login(token);
+
