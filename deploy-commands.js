@@ -82,7 +82,8 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("gameson")
-    .setDescription("Show all games bound to active licenses with status & player counts"),
+    .setDescription("Show all games bound to active licenses with status & player counts")
+    .addIntegerOption((o) => o.setName("game_id").setDescription("Optional: Check a specific game ID").setRequired(false)),
 ];
 
 const token = process.env.DISCORD_TOKEN;
@@ -109,3 +110,4 @@ const rest = new REST({ version: "10" }).setToken(token);
     process.exit(1);
   }
 })();
+
