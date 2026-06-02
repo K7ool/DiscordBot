@@ -582,6 +582,95 @@ const handlers = {
     ] });
   },
 
+  async gameson(interaction) {
+    if (!isAdmin(interaction.member)) {
+      return interaction.reply({ content: "You do not have permission to use this command.", ephemeral: true });
+    }
+
+    await safeDefer(interaction);
+
+    const snap = await db.collection("licenses")
+      .where("status", "==", "active")
+      .get();
+
+    const universeMap = new Map();
+    snap.docs.forEach((d) => {
+      const lic = d.data();
+      const uid = lic.universeId;
+      if (!uid) return;
+      if (!universeMap.has(uid)) {
+        universeMap.set(uid, { universeId: uid, licenses: [] });
+      }
+      universeMap.get(uid).licenses.push(lic.key);
+    });
+
+    if (universeMap.size === 0) {
+      return interaction.editReply({ embeds: [
+        new EmbedBuilder().setColor(0xffaa44).setTitle("No Games Found")
+          .setDescription("No active licenses are bound to any Roblox game.")
+      ] });
+    }
+
+    const universeIds = [...universeMap.keys()];
+
+    let apiGames = [];
+    try {
+      const res = await fetch(`https://games.roblox.com/v1/games?universeIds=${universeIds.join(",")}`);
+      if (res.ok) {
+        const body = await res.json();
+        apiGames = body.data || [];
+      }
+    } catch (err) {
+      console.error("Roblox API error:", err);
+    }
+
+    const apiMap = new Map(apiGames.map((g) => [g.id, g]));
+
+    const fields = [];
+    for (const [uid, entry] of universeMap) {
+      if (fields.length >= 25) {
+        // embedded field limit page 2 would need pagination
+        break;
+      }
+
+      const game = apiMap.get(Number(uid));
+      const name = game ? game.name : `\`${uid}\``;
+      const playing = game ? game.playing : 0;
+      const online = playing > 0;
+      const onlineText = online ? "🟢 Online" : "🔴 Offline";
+
+      const detailLines = [
+        `**Status:** ${onlineText} (${playing} player${playing === 1 ? "" : "s"})`,
+        `**Licenses:** ${entry.licenses.join(", ")}`,
+      ];
+
+      if (game) {
+        detailLines.push(
+          `**Visits:** ${(game.visits || 0).toLocaleString()}`,
+          `**Favorites:** ${(game.favoritedCount || 0).toLocaleString()}`,
+        );
+      }
+
+      fields.push({
+        name: name,
+        value: detailLines.join("\n"),
+        inline: false,
+      });
+    }
+
+    const remaining = universeMap.size - fields.length;
+    const footer = remaining > 0 ? `\n… and ${remaining} more game${remaining === 1 ? "" : "s"}` : "";
+
+    return interaction.editReply({ embeds: [
+      new EmbedBuilder()
+        .setColor(0x44aaff)
+        .setTitle(`Games on License System (${universeMap.size})`)
+        .setDescription(`Universe${universeMap.size === 1 ? "" : "s"} bound to active licenses${footer}`)
+        .addFields(fields)
+        .setTimestamp()
+    ] });
+  },
+
   async help(interaction) {
     const embed = new EmbedBuilder()
       .setColor(0x44aaff)
@@ -604,6 +693,7 @@ const handlers = {
           "`/delete id:` — Permanently remove",
           "`/setuser id: user_id:` — Reassign user",
           "`/export` — Dump all licenses as JSON",
+          "`/gameson` — Show games bound to active licenses with player counts",
         ].join("\n") },
       )
       .setFooter({ text: "Flipp Studios License Manager" })

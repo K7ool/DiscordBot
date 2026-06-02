@@ -79,6 +79,10 @@ const commands = [
   new SlashCommandBuilder()
     .setName("help")
     .setDescription("Show all available commands"),
+
+  new SlashCommandBuilder()
+    .setName("gameson")
+    .setDescription("Show all games bound to active licenses with status & player counts"),
 ];
 
 const token = process.env.DISCORD_TOKEN;
