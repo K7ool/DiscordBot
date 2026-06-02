@@ -49,6 +49,8 @@ if (!token) {
   process.exit(1);
 }
 
+const robloxApiKey = process.env.ROBLOX_API_KEY || "";
+
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
 // ─── Helpers ───
@@ -605,22 +607,42 @@ const handlers = {
       return null;
     }
 
+    async function fetchPlaceInfo(placeId) {
+      try {
+        const res = await fetch(`https://economy.roblox.com/v2/assets/${placeId}/details`);
+        if (res.ok) return await res.json();
+      } catch (err) {
+        console.error("Economy API error:", err);
+      }
+      return null;
+    }
+
     async function resolveToUniverseId(id) {
       let game = await fetchGameInfo(id);
       if (game) return { universeId: Number(id), game };
 
-      try {
-        const res = await fetch(`https://api.roblox.com/universes/get-universe-containing-place?placeid=${id}`);
-        if (res.ok) {
-          const body = await res.json();
-          if (body.UniverseId) {
-            game = await fetchGameInfo(body.UniverseId);
-            return { universeId: body.UniverseId, game };
+      if (robloxApiKey) {
+        try {
+          const res = await fetch(`https://apis.roblox.com/universes/v1/places/${id}/universe`, {
+            headers: { "x-api-key": robloxApiKey },
+          });
+          if (res.ok) {
+            const body = await res.json();
+            if (body.universeId) {
+              game = await fetchGameInfo(body.universeId);
+              return { universeId: body.universeId, game, fromPlace: true };
+            }
           }
+        } catch (err) {
+          console.error("Open Cloud API error:", err);
         }
-      } catch (err) {
-        console.error("Place-to-universe conversion error:", err);
       }
+
+      const placeInfo = await fetchPlaceInfo(id);
+      if (placeInfo) {
+        return { universeId: null, game: null, placeInfo, fromPlace: true };
+      }
+
       return null;
     }
 
@@ -640,34 +662,56 @@ const handlers = {
       const boundLicenses = [];
       snap.docs.forEach((d) => {
         const lic = d.data();
-        if (Number(lic.universeId) === result.universeId) {
+        if (result.universeId && Number(lic.universeId) === result.universeId) {
           boundLicenses.push(lic.key);
         }
       });
 
-      const g = result.game;
-      const playing = g.playing || 0;
-      const online = playing > 0;
-      const onlineText = online ? "🟢 Online" : "🔴 Offline";
+      if (result.game) {
+        const g = result.game;
+        const playing = g.playing || 0;
+        const online = playing > 0;
+        const onlineText = online ? "🟢 Online" : "🔴 Offline";
 
-      const embed = new EmbedBuilder()
-        .setColor(0x44aaff)
-        .setTitle(g.name)
-        .setURL(`https://www.roblox.com/games/${g.id}`)
-        .addFields(
-          { name: "Universe ID", value: String(result.universeId), inline: true },
-          { name: "Status", value: `${onlineText} (${playing} player${playing === 1 ? "" : "s"})`, inline: true },
-          { name: "Visits", value: (g.visits || 0).toLocaleString(), inline: true },
-          { name: "Favorites", value: (g.favoritedCount || 0).toLocaleString(), inline: true },
-          { name: "Created", value: g.created ? new Date(g.created).toLocaleDateString() : "—", inline: true },
-          { name: "Updated", value: g.updated ? new Date(g.updated).toLocaleDateString() : "—", inline: true },
-          { name: "Bound Licenses", value: boundLicenses.length > 0 ? boundLicenses.join("\n") : "None" },
-        )
-        .setTimestamp();
+        const embed = new EmbedBuilder()
+          .setColor(0x44aaff)
+          .setTitle(g.name)
+          .setURL(`https://www.roblox.com/games/${g.rootPlaceId || g.id}`)
+          .addFields(
+            { name: "Universe ID", value: String(result.universeId), inline: true },
+            { name: "Status", value: `${onlineText} (${playing} player${playing === 1 ? "" : "s"})`, inline: true },
+            { name: "Visits", value: (g.visits || 0).toLocaleString(), inline: true },
+            { name: "Favorites", value: (g.favoritedCount || 0).toLocaleString(), inline: true },
+            { name: "Created", value: g.created ? new Date(g.created).toLocaleDateString() : "—", inline: true },
+            { name: "Updated", value: g.updated ? new Date(g.updated).toLocaleDateString() : "—", inline: true },
+            { name: "Bound Licenses", value: boundLicenses.length > 0 ? boundLicenses.join("\n") : "None" },
+          )
+          .setTimestamp();
 
-      if (g.description) embed.setDescription(g.description.slice(0, 200));
+        if (g.description) embed.setDescription(g.description.slice(0, 200));
 
-      return interaction.editReply({ embeds: [embed] });
+        return interaction.editReply({ embeds: [embed] });
+      }
+
+      // Fallback: only place info available (economy API)
+      const p = result.placeInfo;
+      const creatorName = p.Creator ? `${p.Creator.Name} (${p.Creator.CreatorType === "Group" ? "Group" : "User"})` : "—";
+
+      return interaction.editReply({ embeds: [
+        new EmbedBuilder()
+          .setColor(0xffaa44)
+          .setTitle(p.Name || "Unknown Game")
+          .setURL(`https://www.roblox.com/games/${gameId.trim()}`)
+          .addFields(
+            { name: "Place ID", value: String(p.AssetId), inline: true },
+            { name: "Creator", value: creatorName, inline: true },
+            { name: "Created", value: p.Created ? new Date(p.Created).toLocaleDateString() : "—", inline: true },
+            { name: "Updated", value: p.Updated ? new Date(p.Updated).toLocaleDateString() : "—", inline: true },
+            { name: "Bound Licenses", value: boundLicenses.length > 0 ? boundLicenses.join("\n") : "None" },
+            { name: "Note", value: "This is a **Place ID**, not a Universe ID. Player count unavailable. Set `ROBLOX_API_KEY` in `.env` for full lookup." },
+          )
+          .setTimestamp()
+      ] });
     }
 
     // ─── No gameId — show all games ───
