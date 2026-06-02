@@ -4,24 +4,59 @@ const admin = require("firebase-admin");
 
 // ─── Firebase Admin Init ───
 
-const raw = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
-if (!raw) {
-  console.error("Missing FIREBASE_SERVICE_ACCOUNT_KEY in .env");
-  process.exit(1);
-}
+// Support two initialization methods:
+// 1. Individual environment variables (RECOMMENDED for Railway)
+// 2. JSON service account key (legacy)
 
-let serviceAccount;
-try {
-  serviceAccount = JSON.parse(raw);
-  if (serviceAccount.private_key) {
-    serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, "\n");
+let firebaseInitialized = false;
+
+const projectId = process.env.FIREBASE_PROJECT_ID;
+const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+const privateKey = process.env.FIREBASE_PRIVATE_KEY;
+const serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
+
+if (projectId && clientEmail && privateKey) {
+  // Method 1: Use individual environment variables (Railway-friendly)
+  try {
+    admin.initializeApp({
+      credential: admin.credential.cert({
+        projectId,
+        clientEmail,
+        privateKey: privateKey.replace(/\\n/g, "\n"),
+      }),
+    });
+    firebaseInitialized = true;
+    console.log("Firebase initialized with individual environment variables");
+  } catch (err) {
+    console.error("Failed to initialize Firebase with individual variables:", err.message);
   }
-} catch {
-  console.error("Invalid FIREBASE_SERVICE_ACCOUNT_KEY JSON");
+}
+
+// Fallback: Method 2: Use JSON service account key
+if (!firebaseInitialized && serviceAccountJson) {
+  try {
+    let serviceAccount = JSON.parse(serviceAccountJson);
+    if (serviceAccount.private_key) {
+      serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, "\n");
+    }
+    admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
+    firebaseInitialized = true;
+    console.log("Firebase initialized with JSON service account key");
+  } catch (err) {
+    console.error("Failed to initialize Firebase with JSON key:", err.message);
+  }
+}
+
+// Exit only if neither method worked
+if (!firebaseInitialized) {
+  console.error(
+    "Missing Firebase credentials. Please set one of:\n" +
+    "  Option 1 (RECOMMENDED): FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY\n" +
+    "  Option 2 (Legacy): FIREBASE_SERVICE_ACCOUNT_KEY (as JSON string)"
+  );
   process.exit(1);
 }
 
-admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
 const db = admin.firestore();
 
 // ─── Discord Client ───
@@ -322,3 +357,4 @@ client.on("interactionCreate", async (interaction) => {
 });
 
 client.login(token);
+
