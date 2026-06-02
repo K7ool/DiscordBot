@@ -594,9 +594,13 @@ const handlers = {
 
     // ─── Helper: fetch game info from Roblox API ───
 
+    const UA = "LicenseBot/1.0 (+https://github.com/K7ool/DiscordBot)";
+
     async function fetchGameInfo(uid) {
       try {
-        const res = await fetch(`https://games.roblox.com/v1/games?universeIds=${uid}`);
+        const res = await fetch(`https://games.roblox.com/v1/games?universeIds=${uid}`, {
+          headers: { "User-Agent": UA },
+        });
         if (res.ok) {
           const body = await res.json();
           if (body.data && body.data.length > 0) return body.data[0];
@@ -609,7 +613,9 @@ const handlers = {
 
     async function fetchPlaceInfo(placeId) {
       try {
-        const res = await fetch(`https://economy.roblox.com/v2/assets/${placeId}/details`);
+        const res = await fetch(`https://economy.roblox.com/v2/assets/${placeId}/details`, {
+          headers: { "User-Agent": UA },
+        });
         if (res.ok) return await res.json();
       } catch (err) {
         console.error("Economy API error:", err);
