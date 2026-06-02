@@ -587,9 +587,90 @@ const handlers = {
       return interaction.reply({ content: "You do not have permission to use this command.", ephemeral: true });
     }
 
+    const gameId = interaction.options.getString("gameid");
     await safeDefer(interaction);
 
-    const targetGameId = interaction.options.getInteger("game_id");
+    // ─── Helper: fetch game info from Roblox API ───
+
+    async function fetchGameInfo(uid) {
+      try {
+        const res = await fetch(`https://games.roblox.com/v1/games?universeIds=${uid}`);
+        if (res.ok) {
+          const body = await res.json();
+          if (body.data && body.data.length > 0) return body.data[0];
+        }
+      } catch (err) {
+        console.error("Roblox API error:", err);
+      }
+      return null;
+    }
+
+    async function resolveToUniverseId(id) {
+      let game = await fetchGameInfo(id);
+      if (game) return { universeId: Number(id), game };
+
+      try {
+        const res = await fetch(`https://api.roblox.com/universes/get-universe-containing-place?placeid=${id}`);
+        if (res.ok) {
+          const body = await res.json();
+          if (body.UniverseId) {
+            game = await fetchGameInfo(body.UniverseId);
+            return { universeId: body.UniverseId, game };
+          }
+        }
+      } catch (err) {
+        console.error("Place-to-universe conversion error:", err);
+      }
+      return null;
+    }
+
+    if (gameId) {
+      const result = await resolveToUniverseId(gameId.trim());
+      if (!result) {
+        return interaction.editReply({ embeds: [
+          new EmbedBuilder().setColor(0xff4444).setTitle("Game Not Found")
+            .setDescription(`Could not resolve \`${gameId}\` to a valid Roblox game.`)
+        ] });
+      }
+
+      const snap = await db.collection("licenses")
+        .where("status", "==", "active")
+        .get();
+
+      const boundLicenses = [];
+      snap.docs.forEach((d) => {
+        const lic = d.data();
+        if (Number(lic.universeId) === result.universeId) {
+          boundLicenses.push(lic.key);
+        }
+      });
+
+      const g = result.game;
+      const playing = g.playing || 0;
+      const online = playing > 0;
+      const onlineText = online ? "🟢 Online" : "🔴 Offline";
+
+      const embed = new EmbedBuilder()
+        .setColor(0x44aaff)
+        .setTitle(g.name)
+        .setURL(`https://www.roblox.com/games/${g.id}`)
+        .addFields(
+          { name: "Universe ID", value: String(result.universeId), inline: true },
+          { name: "Status", value: `${onlineText} (${playing} player${playing === 1 ? "" : "s"})`, inline: true },
+          { name: "Visits", value: (g.visits || 0).toLocaleString(), inline: true },
+          { name: "Favorites", value: (g.favoritedCount || 0).toLocaleString(), inline: true },
+          { name: "Created", value: g.created ? new Date(g.created).toLocaleDateString() : "—", inline: true },
+          { name: "Updated", value: g.updated ? new Date(g.updated).toLocaleDateString() : "—", inline: true },
+          { name: "Bound Licenses", value: boundLicenses.length > 0 ? boundLicenses.join("\n") : "None" },
+        )
+        .setTimestamp();
+
+      if (g.description) embed.setDescription(g.description.slice(0, 200));
+
+      return interaction.editReply({ embeds: [embed] });
+    }
+
+    // ─── No gameId — show all games ───
 
     const snap = await db.collection("licenses")
       .where("status", "==", "active")
@@ -644,9 +725,7 @@ const handlers = {
 
     const fields = [];
     for (const [uid, entry] of universeMap) {
-      if (fields.length >= 25) {
-        break;
-      }
+      if (fields.length >= 25) break;
 
       const game = apiMap.get(Number(uid));
       const name = game ? game.name : `\`${uid}\``;
@@ -712,7 +791,7 @@ const handlers = {
           "`/delete id:` — Permanently remove",
           "`/setuser id: user_id:` — Reassign user",
           "`/export` — Dump all licenses as JSON",
-          "`/gameson [game_id]` — Show games bound to active licenses (optionally filter by game ID)",
+          "`/gameson gameid:` — Show games on license system (optional specific game)",
         ].join("\n") },
       )
       .setFooter({ text: "Flipp Studios License Manager" })

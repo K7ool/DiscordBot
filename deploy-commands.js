@@ -80,10 +80,13 @@ const commands = [
     .setName("help")
     .setDescription("Show all available commands"),
 
-  new SlashCommandBuilder()
+   new SlashCommandBuilder()
     .setName("gameson")
-    .setDescription("Show all games bound to active licenses with status & player counts")
-    .addIntegerOption((o) => o.setName("game_id").setDescription("Optional: Check a specific game ID").setRequired(false)),
+    .setDescription("Show games bound to active licenses with status & player counts")
+    .addStringOption((o) =>
+      o.setName("gameid")
+        .setDescription("Optional: specific game/place ID to look up")
+        .setRequired(false))
 ];
 
 const token = process.env.DISCORD_TOKEN;
